@@ -1,13 +1,11 @@
 /**
  * Simple assembler for 16-bit GPR CPU.
  */
-#define _CRT_SECURE_NO_WARNINGS 1
 
 #include "assembler.h"
-#include <cstdio>
-#include <cctype>
 #include <sstream>
 #include <map>
+#include <fstream>
 
 static int getOpcode(const std::string& mnem) {
     if (mnem == "HALT") return 0;
@@ -29,8 +27,13 @@ static int getOpcode(const std::string& mnem) {
     return -1;
 }
 
+static char toUpperChar(char c) {
+    if (c >= 'a' && c <= 'z') return static_cast<char>(c - 32);
+    return c;
+}
+
 static std::string toUpper(std::string s) {
-    for (char& c : s) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    for (char& c : s) c = toUpperChar(c);
     return s;
 }
 
@@ -70,7 +73,7 @@ static void tokenize(const std::string& line, std::vector<std::string>& tokens) 
     std::string cur;
     for (size_t i = 0; i <= line.size(); ++i) {
         char c = (i < line.size()) ? line[i] : ' ';
-        if (std::isspace(static_cast<unsigned char>(c)) || c == ',') {
+        if ((c == ' ' || c == '\t' || c == '\r' || c == '\n') || c == ',') {
             if (!cur.empty()) {
                 tokens.push_back(cur);
                 cur.clear();
@@ -273,16 +276,9 @@ AssembleResult assemble(const std::string& source, uint16_t* mem, size_t memSize
 }
 
 AssembleResult assembleFile(const char* path, uint16_t* mem, size_t memSize) {
-    std::FILE* f = std::fopen(path, "rb");
-    if (!f) return AssembleResult{false, "Cannot open file", 0};
-    std::fseek(f, 0, SEEK_END);
-    long sz = std::ftell(f);
-    std::fseek(f, 0, SEEK_SET);
-    std::string source(static_cast<size_t>(sz), '\0');
-    if (std::fread(&source[0], 1, static_cast<size_t>(sz), f) != static_cast<size_t>(sz)) {
-        std::fclose(f);
-        return AssembleResult{false, "Read error", 0};
-    }
-    std::fclose(f);
+    std::ifstream in(path, std::ios::binary);
+    if (!in) return AssembleResult{false, "Cannot open file", 0};
+    std::string source((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    in.close();
     return assemble(source, mem, memSize);
 }

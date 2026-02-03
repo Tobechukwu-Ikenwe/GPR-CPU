@@ -3,16 +3,15 @@
  */
 
 #include "gpr_cpu.h"
-#include <cstring>
-#include <cstdio>
+#include <iostream>
+#include <iomanip>
 
 // =============================================================================
 // BUS
 // =============================================================================
 
 Bus::Bus() {
-    memory = new uint16_t[MEMORY_SIZE];
-    std::memset(memory, 0, MEMORY_SIZE * sizeof(uint16_t));
+    memory = new uint16_t[MEMORY_SIZE]();
 }
 
 Bus::~Bus() {
@@ -102,7 +101,8 @@ GPRCPU::GPRCPU(Bus& bus) : bus(bus), tracing(false) {
 }
 
 void GPRCPU::reset() {
-    std::memset(state.R, 0, sizeof(state.R));
+    for (unsigned i = 0; i < 8; ++i)
+        state.R[i] = 0;
     state.PC = 0;
     state.FLAGS = 0;
     state.halted = false;
@@ -120,15 +120,16 @@ bool GPRCPU::step() {
     uint16_t instruction = bus.read(state.PC);
 
     if (tracing) {
-        std::printf("\n--- Cycle @ PC=0x%04X ---\n", state.PC);
-        std::printf("  Instruction: 0x%04X\n", instruction);
-        std::printf("  R0=%04X R1=%04X R2=%04X R3=%04X R4=%04X R5=%04X R6=%04X R7=%04X\n",
-                    state.R[0], state.R[1], state.R[2], state.R[3],
-                    state.R[4], state.R[5], state.R[6], state.R[7]);
-        std::printf("  FLAGS: Z=%d C=%d N=%d\n",
-                    (state.FLAGS & FLAG_ZERO) ? 1 : 0,
-                    (state.FLAGS & FLAG_CARRY) ? 1 : 0,
-                    (state.FLAGS & FLAG_NEGATIVE) ? 1 : 0);
+        std::cout << "\n--- Cycle @ PC=0x" << std::hex << std::setw(4) << std::setfill('0') << state.PC << " ---\n";
+        std::cout << "  Instruction: 0x" << std::setw(4) << instruction << "\n";
+        std::cout << "  R0=" << std::setw(4) << state.R[0] << " R1=" << std::setw(4) << state.R[1]
+                  << " R2=" << std::setw(4) << state.R[2] << " R3=" << std::setw(4) << state.R[3]
+                  << " R4=" << std::setw(4) << state.R[4] << " R5=" << std::setw(4) << state.R[5]
+                  << " R6=" << std::setw(4) << state.R[6] << " R7=" << std::setw(4) << state.R[7] << "\n";
+        std::cout << "  FLAGS: Z=" << ((state.FLAGS & FLAG_ZERO) ? 1 : 0)
+                  << " C=" << ((state.FLAGS & FLAG_CARRY) ? 1 : 0)
+                  << " N=" << ((state.FLAGS & FLAG_NEGATIVE) ? 1 : 0) << "\n";
+        std::cout << std::dec;
     }
 
     // --- DECODE: Advance PC to next instruction (most instructions are 1 word) ---
@@ -149,21 +150,21 @@ void GPRCPU::execute(uint16_t instruction) {
     switch (static_cast<Opcode>(op)) {
         case Opcode::HALT:
             state.halted = true;
-            if (tracing) std::printf("  [EXEC] HALT\n");
+            if (tracing) std::cout << "  [EXEC] HALT\n";
             break;
 
         case Opcode::MOVI: {
             // Rd = 9-bit immediate (zero-extended to 16 bits)
             state.R[rd] = imm9;
             setResultFlags(state.R[rd]);
-            if (tracing) std::printf("  [EXEC] MOVI R%u, %u\n", rd, imm9);
+            if (tracing) std::cout << "  [EXEC] MOVI R" << static_cast<unsigned>(rd) << ", " << imm9 << "\n";
             break;
         }
 
         case Opcode::MOV: {
             state.R[rd] = state.R[rs];
             setResultFlags(state.R[rd]);
-            if (tracing) std::printf("  [EXEC] MOV R%u, R%u\n", rd, rs);
+            if (tracing) std::cout << "  [EXEC] MOV R" << static_cast<unsigned>(rd) << ", R" << static_cast<unsigned>(rs) << "\n";
             break;
         }
 
@@ -171,14 +172,17 @@ void GPRCPU::execute(uint16_t instruction) {
             uint16_t addr = state.R[rs];
             state.R[rd] = bus.read(addr);
             setResultFlags(state.R[rd]);
-            if (tracing) std::printf("  [EXEC] LOAD R%u, (R%u)  ; R%u = mem[0x%04X] = 0x%04X\n", rd, rs, rd, addr, state.R[rd]);
+            if (tracing) std::cout << "  [EXEC] LOAD R" << static_cast<unsigned>(rd) << ", (R" << static_cast<unsigned>(rs)
+                << ")  ; R" << static_cast<unsigned>(rd) << " = mem[0x" << std::hex << std::setw(4) << std::setfill('0') << addr
+                << "] = 0x" << state.R[rd] << std::dec << "\n";
             break;
         }
 
         case Opcode::STORE: {
             uint16_t addr = state.R[rs];
             bus.write(addr, state.R[rd]);
-            if (tracing) std::printf("  [EXEC] STORE R%u, (R%u)  ; mem[0x%04X] = 0x%04X\n", rd, rs, addr, state.R[rd]);
+            if (tracing) std::cout << "  [EXEC] STORE R" << static_cast<unsigned>(rd) << ", (R" << static_cast<unsigned>(rs)
+                << ")  ; mem[0x" << std::hex << std::setw(4) << std::setfill('0') << addr << "] = 0x" << state.R[rd] << std::dec << "\n";
             break;
         }
 
@@ -187,7 +191,8 @@ void GPRCPU::execute(uint16_t instruction) {
             uint16_t result = a + b;
             state.R[rd] = result;
             setAddFlags(a, b, result);
-            if (tracing) std::printf("  [EXEC] ADD R%u, R%u  ; R%u = 0x%04X + 0x%04X = 0x%04X\n", rd, rs, rd, a, b, result);
+            if (tracing) std::cout << "  [EXEC] ADD R" << static_cast<unsigned>(rd) << ", R" << static_cast<unsigned>(rs)
+                << "  ; R" << static_cast<unsigned>(rd) << " = 0x" << std::hex << std::setw(4) << a << " + 0x" << b << " = 0x" << result << std::dec << "\n";
             break;
         }
 
@@ -196,35 +201,37 @@ void GPRCPU::execute(uint16_t instruction) {
             uint16_t result = a - b;
             state.R[rd] = result;
             setSubFlags(a, b, result);
-            if (tracing) std::printf("  [EXEC] SUB R%u, R%u  ; R%u = 0x%04X - 0x%04X = 0x%04X\n", rd, rs, rd, a, b, result);
+            if (tracing) std::cout << "  [EXEC] SUB R" << static_cast<unsigned>(rd) << ", R" << static_cast<unsigned>(rs)
+                << "  ; R" << static_cast<unsigned>(rd) << " = 0x" << std::hex << std::setw(4) << a << " - 0x" << b << " = 0x" << result << std::dec << "\n";
             break;
         }
 
         case Opcode::AND: {
             state.R[rd] = state.R[rd] & state.R[rs];
             setResultFlags(state.R[rd]);
-            if (tracing) std::printf("  [EXEC] AND R%u, R%u\n", rd, rs);
+            if (tracing) std::cout << "  [EXEC] AND R" << static_cast<unsigned>(rd) << ", R" << static_cast<unsigned>(rs) << "\n";
             break;
         }
 
         case Opcode::OR: {
             state.R[rd] = state.R[rd] | state.R[rs];
             setResultFlags(state.R[rd]);
-            if (tracing) std::printf("  [EXEC] OR R%u, R%u\n", rd, rs);
+            if (tracing) std::cout << "  [EXEC] OR R" << static_cast<unsigned>(rd) << ", R" << static_cast<unsigned>(rs) << "\n";
             break;
         }
 
         case Opcode::XOR: {
             state.R[rd] = state.R[rd] ^ state.R[rs];
             setResultFlags(state.R[rd]);
-            if (tracing) std::printf("  [EXEC] XOR R%u, R%u\n", rd, rs);
+            if (tracing) std::cout << "  [EXEC] XOR R" << static_cast<unsigned>(rd) << ", R" << static_cast<unsigned>(rs) << "\n";
             break;
         }
 
         case Opcode::NOT: {
             state.R[rd] = ~state.R[rs];
             setResultFlags(state.R[rd]);
-            if (tracing) std::printf("  [EXEC] NOT R%u, R%u  ; R%u = ~R%u\n", rd, rs, rd, rs);
+            if (tracing) std::cout << "  [EXEC] NOT R" << static_cast<unsigned>(rd) << ", R" << static_cast<unsigned>(rs)
+                << "  ; R" << static_cast<unsigned>(rd) << " = ~R" << static_cast<unsigned>(rs) << "\n";
             break;
         }
 
@@ -235,7 +242,8 @@ void GPRCPU::execute(uint16_t instruction) {
             if (state.R[rd] == 0) state.FLAGS |= FLAG_ZERO;
             if (state.R[rd] & 0x8000u) state.FLAGS |= FLAG_NEGATIVE;
             if (val & 0x8000u) state.FLAGS |= FLAG_CARRY; // bit 15 was set, so it carried out
-            if (tracing) std::printf("  [EXEC] SHL R%u  ; R%u = 0x%04X << 1 = 0x%04X\n", rd, rd, val, state.R[rd]);
+            if (tracing) std::cout << "  [EXEC] SHL R" << static_cast<unsigned>(rd) << "  ; R" << static_cast<unsigned>(rd)
+                << " = 0x" << std::hex << std::setw(4) << std::setfill('0') << val << " << 1 = 0x" << state.R[rd] << std::dec << "\n";
             break;
         }
 
@@ -246,29 +254,30 @@ void GPRCPU::execute(uint16_t instruction) {
             if (state.R[rd] == 0) state.FLAGS |= FLAG_ZERO;
             if (state.R[rd] & 0x8000u) state.FLAGS |= FLAG_NEGATIVE;
             if (val & 1u) state.FLAGS |= FLAG_CARRY; // bit 0 was set, carried out
-            if (tracing) std::printf("  [EXEC] SHR R%u  ; R%u = 0x%04X >> 1 = 0x%04X\n", rd, rd, val, state.R[rd]);
+            if (tracing) std::cout << "  [EXEC] SHR R" << static_cast<unsigned>(rd) << "  ; R" << static_cast<unsigned>(rd)
+                << " = 0x" << std::hex << std::setw(4) << std::setfill('0') << val << " >> 1 = 0x" << state.R[rd] << std::dec << "\n";
             break;
         }
 
         case Opcode::JMP: {
             state.PC = state.R[rs];
-            if (tracing) std::printf("  [EXEC] JMP R%u  ; PC = 0x%04X\n", rs, state.PC);
+            if (tracing) std::cout << "  [EXEC] JMP R" << static_cast<unsigned>(rs) << "  ; PC = 0x" << std::hex << std::setw(4) << state.PC << std::dec << "\n";
             break;
         }
 
         case Opcode::JZ: {
             if (state.FLAGS & FLAG_ZERO) {
                 state.PC = state.R[rs];
-                if (tracing) std::printf("  [EXEC] JZ R%u  ; Z=1, PC = 0x%04X\n", rs, state.PC);
+                if (tracing) std::cout << "  [EXEC] JZ R" << static_cast<unsigned>(rs) << "  ; Z=1, PC = 0x" << std::hex << std::setw(4) << state.PC << std::dec << "\n";
             } else {
-                if (tracing) std::printf("  [EXEC] JZ R%u  ; Z=0, no jump\n", rs);
+                if (tracing) std::cout << "  [EXEC] JZ R" << static_cast<unsigned>(rs) << "  ; Z=0, no jump\n";
             }
             break;
         }
 
         case Opcode::NOP:
         default:
-            if (tracing) std::printf("  [EXEC] NOP\n");
+            if (tracing) std::cout << "  [EXEC] NOP\n";
             break;
     }
 }
